@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>取件助手</title>
+    
+    <!-- PWA 相关配置 -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a73e8">
+    
+    <!-- iOS 支持 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="取件助手">
+    <link rel="apple-touch-icon" href="icons/icon.svg">
+
+    <!-- 样式表 -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>取件助手</h1>
+            <div id="status" class="sw-status"></div>
+        </header>
+
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="pending">待取件 <span id="count-pending" class="badge">0</span></button>
+            <button class="tab-btn" data-tab="collected">已取件 <span id="count-collected" class="badge">0</span></button>
+        </nav>
+
+        <main>
+            <!-- 待取件页面 -->
+            <section id="pending-section" class="tab-content active">
+                <div class="action-bar">
+                    <button id="show-parser-btn" class="add-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        添加包裹
+                    </button>
+                </div>
+
+                <!-- 解析器区域 (默认隐藏) -->
+                <div id="parser-modal" class="modal">
+                    <div class="modal-content">
+                        <h3>解析物流短信</h3>
+                        <textarea id="sms-input" placeholder="粘贴短信内容..."></textarea>
+                        <div class="modal-actions">
+                            <button id="parse-btn">解析</button>
+                            <button id="close-parser-btn" class="cancel-btn">取消</button>
+                        </div>
+                        <div id="result-display" class="card result-card" style="display: none; padding: 1rem; border: 1px dashed var(--primary-color);">
+                            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
+                                <div class="courier-col" style="flex: 0 0 56px; height: 56px;">
+                                    <span id="res-courier" class="courier-name"></span>
+                                </div>
+                                <div style="flex: 1;">
+                                    <small style="color: var(--text-sub); display: block;">取件码</small>
+                                    <strong id="res-code" style="font-size: 1.4rem; color: var(--primary-color); line-height: 1;"></strong>
+                                </div>
+                            </div>
+                            <div style="background: #f8f9fa; padding: 0.4rem 0.6rem; border-radius: 6px; margin-bottom: 0.8rem;">
+                                <small style="color: var(--text-sub);">位置：</small>
+                                <span id="res-location" style="font-size: 0.85rem;"></span>
+                            </div>
+                            <button id="save-btn" class="secondary-btn" style="width: 100%; padding: 0.6rem; background: var(--success-color); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 0.9rem;">确认存入</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="pending-list" class="list-container">
+                    <p class="empty-msg">暂无待取包裹</p>
+                </div>
+            </section>
+
+            <!-- 已取件页面 -->
+            <section id="collected-section" class="tab-content">
+                <div class="action-bar">
+                    <button id="clear-all-btn" class="delete-all-btn" style="visibility: hidden;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                        清空记录
+                    </button>
+                </div>
+                <div id="collected-list" class="list-container">
+                    <p class="empty-msg">暂无已取记录</p>
+                </div>
+            </section>
+        </main>
+
+        <!-- 名言模块 -->
+        <div id="saying-container" class="saying-simple">
+            <p id="saying-text">正在加载名言...</p>
+            <button id="refresh-saying-btn" class="refresh-btn" title="刷新名言">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            </button>
+        </div>
+
+        <button id="install-btn" class="install-fab" style="display: none;">安装应用</button>
+    </div>
+
+    <script src="parser.js"></script>
+    <script src="db.js"></script>
+    <script type="module">
+        import { UapiClient } from 'https://cdn.jsdelivr.net/npm/uapi-browser-sdk@latest/dist/index.js';
+        
+        const client = new UapiClient('https://uapis.cn');
+        const sayingText = document.getElementById('saying-text');
+        const refreshBtn = document.getElementById('refresh-saying-btn');
+        
+        let isFetching = false;
+        let lastFetchTime = 0;
+        const COOLDOWN = 2000;
+
+        async function fetchSaying() {
+            const now = Date.now();
+            if (isFetching || (now - lastFetchTime < COOLDOWN)) return;
+            
+            isFetching = true;
+            refreshBtn.classList.add('rotating');
+            
+            try {
+                const res = await client.poem.getSaying();
+                if (res && res.text) {
+                    sayingText.innerText = res.text;
+                } else {
+                    throw new Error('Invalid data format');
+                }
+            } catch (error) {
+                console.error('获取名言失败:', error);
+                sayingText.innerText = "生活原本沉闷，但跑起来就会有风。";
+            } finally {
+                isFetching = false;
+                lastFetchTime = Date.now();
+                setTimeout(() => refreshBtn.classList.remove('rotating'), 500);
+            }
+        }
+
+        refreshBtn.addEventListener('click', fetchSaying);
+        
+        // 初始获取
+        window.addEventListener('load', fetchSaying);
+    </script>
+    <script>
+        // DOM 元素
+        const tabs = document.querySelectorAll('.tab-btn');
+        const contents = document.querySelectorAll('.tab-content');
+        const showParserBtn = document.getElementById('show-parser-btn');
+        const closeParserBtn = document.getElementById('close-parser-btn');
+        const parserModal = document.getElementById('parser-modal');
+        const smsInput = document.getElementById('sms-input');
+        const parseBtn = document.getElementById('parse-btn');
+        const saveBtn = document.getElementById('save-btn');
+        const resultDisplay = document.getElementById('result-display');
+        const resCourier = document.getElementById('res-courier');
+        const resCode = document.getElementById('res-code');
+        const resLocation = document.getElementById('res-location');
+        const pendingList = document.getElementById('pending-list');
+        const collectedList = document.getElementById('collected-list');
+        const countPending = document.getElementById('count-pending');
+        const countCollected = document.getElementById('count-collected');
+        const clearAllBtn = document.getElementById('clear-all-btn');
+        const statusEl = document.getElementById('status');
+
+        let currentResult = null;
+        let currentTab = 'pending';
+
+        // 标签切换逻辑
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const target = tab.dataset.tab;
+                currentTab = target;
+                
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                contents.forEach(c => {
+                    c.classList.remove('active');
+                    if (c.id === `${target}-section`) c.classList.add('active');
+                });
+
+                renderParcels();
+            });
+        });
+
+        // 解析器模态框逻辑
+        showParserBtn.addEventListener('click', () => {
+            parserModal.classList.add('active');
+            smsInput.value = '';
+            resultDisplay.style.display = 'none';
+        });
+
+        closeParserBtn.addEventListener('click', () => {
+            parserModal.classList.remove('active');
+        });
+
+        parseBtn.addEventListener('click', () => {
+            const text = smsInput.value.trim();
+            if (!text) return;
+
+            currentResult = parseLogisticsMessage(text);
+            const formattedCourier = (currentResult.courier || '未知').replace('快递', '<br>快递');
+            resCourier.innerHTML = formattedCourier;
+            resCode.innerText = currentResult.code || '未识别';
+            resLocation.innerText = currentResult.location || '未识别';
+            resultDisplay.style.display = 'block';
+        });
+
+        saveBtn.addEventListener('click', async () => {
+            if (!currentResult) return;
+            try {
+                await parcelDB.addParcel({
+                    ...currentResult,
+                    status: 'pending',
+                    timestamp: Date.now()
+                });
+                parserModal.classList.remove('active');
+                renderParcels();
+            } catch (err) {
+                alert('保存失败');
+            }
+        });
+
+        clearAllBtn.addEventListener('click', async () => {
+            await parcelDB.clearAllCollected();
+            renderParcels();
+        });
+
+        // 渲染列表
+        async function renderParcels() {
+            const parcels = await parcelDB.getAllParcels();
+            
+            // 更新数量统计
+            const pendingParcels = parcels.filter(p => p.status === 'pending');
+            const collectedParcels = parcels.filter(p => p.status === 'collected');
+            
+            countPending.innerText = pendingParcels.length;
+            countCollected.innerText = collectedParcels.length;
+
+            // 控制一键清空按钮显示
+            if (currentTab === 'collected') {
+                clearAllBtn.style.visibility = collectedParcels.length > 0 ? 'visible' : 'hidden';
+            }
+
+            const filtered = currentTab === 'pending' ? pendingParcels : collectedParcels;
+            const container = currentTab === 'pending' ? pendingList : collectedList;
+
+            if (filtered.length === 0) {
+                container.innerHTML = `<p class="empty-msg">暂无${currentTab === 'pending' ? '待取' : '已取'}包裹</p>`;
+                return;
+            }
+
+            container.innerHTML = filtered.map(p => {
+                // 格式化快递名：如果包含“快递”二字，则在其前面换行
+                const formattedCourier = (p.courier || '未知').replace('快递', '<br>快递');
+                
+                return `
+                <div class="parcel-card">
+                    <div class="parcel-main">
+                        <div class="courier-col">
+                            <span class="courier-name">${formattedCourier}</span>
+                        </div>
+                        <div class="info-col">
+                            <div class="code-display">${p.code}</div>
+                            <span class="location-text">${p.location}</span>
+                        </div>
+                    </div>
+                    <div class="parcel-footer">
+                        <span class="time-stamp">${new Date(p.timestamp).toLocaleString('zh-CN', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
+                        <div class="btn-group">
+                            ${p.status === 'pending' 
+                                ? `<button class="collect-btn" onclick="collectParcel(${p.id})">标记已取</button>` 
+                                : `<button class="delete-btn" onclick="deleteParcel(${p.id})">删除记录</button>`}
+                        </div>
+                    </div>
+                </div>
+            `;}).join('');
+        }
+
+        window.collectParcel = async (id) => {
+            await parcelDB.markAsCollected(id);
+            renderParcels();
+        };
+
+        window.deleteParcel = async (id) => {
+            await parcelDB.deleteParcel(id);
+            renderParcels();
+        };
+
+        // 初始化
+        renderParcels();
+
+        // PWA 注册与安装
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(() => statusEl.innerText = '● 已就绪')
+                    .catch(() => statusEl.innerText = '○ 离线');
+            });
+        }
+
+        let deferredPrompt;
+        const installBtn = document.getElementById('install-btn');
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            installBtn.style.display = 'block';
+        });
+
+        installBtn.addEventListener('click', () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then(() => {
+                    deferredPrompt = null;
+                    installBtn.style.display = 'none';
+                });
+            }
+        });
+    </script>
+</body>
+</html>
