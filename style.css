@@ -249,7 +249,7 @@ textarea {
 
 .courier-name {
     font-weight: 800;
-    font-size: 0.7rem;
+    font-size: 1.1rem; 
     color: var(--primary-color);
     text-align: center;
     line-height: 1.1;
