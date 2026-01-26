@@ -205,20 +205,71 @@
             resultDisplay.style.display = 'block';
         });
 
+        // 请求通知权限
+        function requestNotificationPermission() {
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+        }
+
+        // 发送通知
+        function sendNotification(title, body) {
+            if ('Notification' in window && Notification.permission === 'granted') {
+                // 在移动端，如果 PWA 正在前台运行，系统通知可能不会弹出，而是静默显示
+                // 但这取决于具体的 OS 实现。
+                new Notification(title, {
+                    body: body,
+                    icon: 'icons/icon.svg',
+                    vibrate: [200, 100, 200]
+                });
+            }
+        }
+
         saveBtn.addEventListener('click', async () => {
             if (!currentResult) return;
+            
+            // 尝试请求通知权限
+            requestNotificationPermission();
+
             try {
-                await parcelDB.addParcel({
-                    ...currentResult,
-                    status: 'pending',
-                    timestamp: Date.now()
-                });
+                await parcelDB.addParcel(currentResult);
                 parserModal.classList.remove('active');
                 renderParcels();
             } catch (err) {
-                alert('保存失败');
+                alert('保存失败: ' + err.message);
             }
         });
+
+        // 自动处理 URL 参数 (Share Target / iOS Shortcut)
+        const urlParams = new URLSearchParams(window.location.search);
+        const sharedText = urlParams.get('text') || urlParams.get('title'); // 有些分享可能会放在 title 里
+        
+        if (sharedText) {
+            // 清除 URL 参数，避免刷新重复添加
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+            const autoResult = parseLogisticsMessage(sharedText);
+            // 只有当成功解析出取件码时才自动保存
+            if (autoResult && autoResult.code) {
+                parcelDB.addParcel(autoResult).then(() => {
+                    renderParcels();
+                    // 弹出系统通知
+                    sendNotification(
+                        '包裹已添加', 
+                        `${autoResult.courier || '快递'} - 取件码: ${autoResult.code}`
+                    );
+                    // 也可以显示一个应用内提示
+                    alert(`已自动识别并保存包裹：\n${autoResult.courier} ${autoResult.code}`);
+                }).catch(err => {
+                    console.error('自动保存失败', err);
+                });
+            } else {
+                // 如果解析失败或不完整，打开解析弹窗让用户确认
+                smsInput.value = sharedText;
+                parserModal.classList.add('active');
+                parseBtn.click(); // 触发一次解析预览
+            }
+        }
 
         clearAllBtn.addEventListener('click', async () => {
             await parcelDB.clearAllCollected();
