@@ -4,6 +4,13 @@
  * @returns {object} - 包含 code, courier, location, rawText 的对象
  */
 function parseLogisticsMessage(text) {
+    // 0. 尝试特定格式解析
+    // 格式：【申通快递】请凭12-2-1203到紫桂苑东区二楼取件，地址：紫桂苑东区二楼
+    const specialResult = parseSpecialFormat(text);
+    if (specialResult) {
+        return specialResult;
+    }
+
     const result = {
         code: '',
         courier: '',
@@ -73,6 +80,44 @@ function parseLogisticsMessage(text) {
     }
 
     return result;
+}
+
+/**
+ * 解析特定格式：【快递】请凭Code到Location取件，地址：Location
+ */
+function parseSpecialFormat(text) {
+    const result = {
+        code: '',
+        courier: '',
+        location: '',
+        rawText: text
+    };
+
+    // 1. 提取快递公司 【...】
+    const courierMatch = text.match(/【([^】]+)】/);
+    if (courierMatch) {
+        result.courier = courierMatch[1].trim();
+    }
+
+    // 2. 提取取件码 请凭...
+    // 假设取件码由数字、字母、横线组成
+    const codeMatch = text.match(/请凭\s*([A-Za-z0-9-]+)/);
+    if (codeMatch) {
+        result.code = codeMatch[1].trim();
+    }
+
+    // 3. 提取地址 地址：...
+    const locationMatch = text.match(/地址[:：]\s*(.*)$/);
+    if (locationMatch) {
+        result.location = locationMatch[1].trim();
+    }
+
+    // 只有当三个要素都提取到才返回，否则返回 null 以便回退到通用解析
+    if (result.courier && result.code && result.location) {
+        return result;
+    }
+    
+    return null;
 }
 
 // 如果在 Node 环境下，导出模块
